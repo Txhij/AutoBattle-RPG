@@ -1,0 +1,833 @@
+
+<!DOCTYPE html>
+
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<title>Mini RPG - Style Classique</title>
+<style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #1c1c1c;
+      color: #f0f0f0;
+      display: flex;
+      height: 100vh;
+    }
+    #combatLog {
+      width: 25%;
+      background: #111;
+      padding: 10px;
+      font-size: 13px;
+      overflow-y: auto;
+      border-right: 1px solid #333;
+    }
+    #gameArea {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: center;
+      padding: 20px;
+    }
+    #statsPanel {
+      width: 200px;
+      background: #111;
+      padding: 10px;
+      border-left: 1px solid #444;
+      font-size: 14px;
+    }
+    button {
+      margin: 8px;
+      padding: 10px 16px;
+      font-size: 14px;
+      background: #444;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    .hidden {
+      display: none;
+    }
+    #enemyGrid, #playerGrid {
+      display: flex;
+      gap: 20px;
+      margin-top: 20px;
+    }
+    .health-container {
+      background: #444;
+      width: 100px;
+      height: 8px;
+      margin-top: 5px;
+    }
+    .health-bar {
+      background: red;
+      height: 100%;
+    }
+    .xp-bar {
+      background: limegreen;
+      height: 6px;
+    }
+  
+#craftAllBtnFixed {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: #28a745;
+  color: white;
+  padding: 12px 18px;
+  font-size: 14px;
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+  z-index: 1000;
+  cursor: pointer;
+}
+
+#craftAllBtnFixed {
+  display: none;
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: #f39c12;
+  color: white;
+  padding: 14px 20px;
+  font-size: 16px;
+  font-weight: bold;
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.6);
+  z-index: 1000;
+  cursor: pointer;
+}
+
+/* Effets Smooth Ajoutés */
+@keyframes smoothHit {
+  0% { filter: brightness(1); }
+  50% { filter: brightness(1.5); }
+  100% { filter: brightness(1); }
+}
+.hit-smooth {
+  animation: smoothHit 0.2s ease;
+}
+@keyframes smoothAppear {
+  0% { opacity: 0; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.appear-smooth {
+  animation: smoothAppear 1s ease forwards;
+}
+@keyframes smoothLevelUp {
+  0% { text-shadow: 0 0 0px gold; }
+  50% { text-shadow: 0 0 8px gold; }
+  100% { text-shadow: 0 0 0px gold; }
+}
+.levelup-smooth {
+  animation: smoothLevelUp 2s ease-in-out;
+}
+
+</style>
+</head>
+<body>
+<audio id="bgMusic" src="background.mp3" loop autoplay muted></audio>
+<audio id="hitSound" src="hit.mp3"></audio>
+<audio id="levelupSound" src="levelup.mp3"></audio>
+<audio id="deathSound" src="death.mp3"></audio>
+
+<script>
+// Débloquer la musique d'ambiance au premier clic
+document.addEventListener('click', function() {
+  const bgMusic = document.getElementById('bgMusic');
+  bgMusic.muted = false;
+  bgMusic.volume = 0.3; // Volume doux
+  bgMusic.play();
+}, { once: true });
+
+// ===== SAUVEGARDE AUTOMATIQUE =====
+
+// Fonction pour sauvegarder la partie
+function saveGame() {
+  const saveData = {
+    hero: hero,
+    inventory: hero.loot
+  };
+  localStorage.setItem('rpgSave', JSON.stringify(saveData));
+}
+
+// Fonction pour charger la partie
+function loadGame() {
+  const save = localStorage.getItem('rpgSave');
+  if (save) {
+    const data = JSON.parse(save);
+    Object.assign(hero, data.hero);
+    hero.loot = data.inventory || {};
+  }
+}
+
+// Charger automatiquement la sauvegarde au lancement
+loadGame();
+updateHeroStats();
+updateInventory();
+render();
+
+
+</script>
+<div id="combatLog">🗒️ Journal de combat<br/></div>
+<div id="gameArea">
+<div id="village", style="text-align: center;">
+<h1>🏡 Village</h1>
+<br><br>
+<label for="zoneSelect">🌍 Choisir une zone :</label>
+<select id="zoneSelect">
+<option value="foret">🌲 Forêt</option>
+<option value="montagne">🔥 Montagnes Ardentes</option>
+<option value="marais">💀 Marais Maudits</option>
+<option value="zone4">🏚️ Ruines de l'Est</option>
+<option value="zone5">💎 Cavernes Cristallines</option>
+<option value="zone6">🔥 Temple du Feu</option>
+<option value="zone7">🏜️ Désert Maudit</option>
+<option value="zone8">🌲 Forêt Noire</option>
+<option value="zone9">🏝️ Île Fantôme</option>
+<option value="zone10">🏰 Forteresse Oubliée</option>
+<option value="zone11">🌌 Abîme du Néant</option>
+</select>
+<button onclick="enterCombat()">⚔️ Partir au combat</button>
+<br><br><br>
+<button onclick="openForge()", style="margin-left: -500px;">🛠️ Forgeron</button>
+</div>
+<div class="hidden" id="forge">
+<h2>🛠️ Forgeron</h2>
+<p>Utilise tes loots pour fabriquer des objets :</p>
+<button onclick="closeForge()">❌ Fermer</button>
+</div>
+<div class="hidden" id="combatZone">
+
+<div id="bossProgressContainer" style="width: 100%; margin-top: 10px;">
+<label>Progression vers le boss :</label>
+<div style="background: #333; width: 100%; height: 10px; border-radius: 5px; overflow: hidden;">
+<div id="bossProgressBar" style="background: limegreen; height: 10px; width: 0%;"></div>
+</div>
+</div>
+<h2>⚔️ Combat</h2>
+<div id="playerGrid"></div>
+<div id="enemyGrid"></div>
+<button id="resetBtn" onclick="forceReturnToVillage()">🏡 Retour</button>
+</div>
+</div>
+<div id="statsPanel">
+<h3>📊 Stats</h3>
+<div id="heroStats"></div><div id="xpBar" style="width: 100px; background: #333; height: 6px; margin: 4px 0;"><div id="xpFill" style="height: 100%; width: 0%; background: limegreen;"></div></div>
+<h4>🎒 Inventaire</h4>
+<ul id="inventoryList"></ul>
+</div>
+
+<script>
+let combatTimeout;
+let combatActive = false;
+
+function forceReturnToVillage() {
+  enemies = [];
+  autoChain = false;
+  combatCount = 0;
+  returnToVillage();
+}
+
+function updateBossProgress() {
+  const bar = document.getElementById("bossProgressBar");
+  if (bar) {
+    let percent = Math.min((combatCount / 5) * 100, 100);
+    bar.style.width = percent + "%";
+  }
+}
+
+let combatCount = 0;
+let autoChain = true; // Peut être désactivé si besoin
+
+const enemiesByZone = {
+  foret: [
+    { name: "Gobelin", hp: 12, atk: 3, speed: 6, xp: 5, loot: "Os" },
+    { name: "Loup", hp: 14, atk: 4, speed: 7, xp: 5, loot: "Cuir" },
+    { name: "Sanglier", hp: 16, atk: 5, speed: 5, xp: 5, loot: "Griffe" },
+    { name: "BOSS: Grand Troll des Bois", hp: 100, atk: 30, speed: 10, xp: 25, loot: "Essence sauvage" }
+  ],
+
+  montagne: [
+    { name: "Orque", hp: 2000, atk: 600, speed: 350, xp: 160, loot: "Braises" },
+    { name: "Golem", hp: 2500, atk: 500, speed: 220, xp: 160, loot: "Fragments" },
+    { name: "Harpie", hp: 1800, atk: 700, speed: 550, xp: 160, loot: "Plume" },
+    { name: "BOSS: Dragon des Cimes", hp: 10000, atk: 1500, speed: 1200, xp: 800, loot: "Cœur flamboyant" }
+  ],
+
+  marais: [
+    { name: "Spectre", hp: 8400, atk: 2100, speed: 1500, xp: 1215, loot: "Éctoplasme" },
+    { name: "Nécromancien", hp: 9000, atk: 2400, speed: 1200, xp: 1215, loot: "Tome noir" },
+    { name: "Zombie vaseux", hp: 9600, atk: 1800, speed: 1100, xp: 1215, loot: "Bouillasse" },
+    { name: "BOSS: Reine Putride", hp: 30000, atk: 4500, speed: 2800, xp: 6075, loot: "Lymphe impure" }
+  ],
+
+  zone4: [
+    { name: "Chasseur d'ombres", hp: 45000, atk: 10000, speed: 3500, xp: 5120, loot: "Essence d'ombre" },
+    { name: "Spectre hurlant", hp: 50000, atk: 11000, speed: 4000, xp: 5120, loot: "Énergie spectrale" },
+    { name: "Veilleur nocturne", hp: 42000, atk: 9000, speed: 3800, xp: 5120, loot: "Oeil maudit" },
+    { name: "BOSS: Maître des Ombres", hp: 120000, atk: 15000, speed: 6000, xp: 25600, loot: "Cape vivante" }
+  ],
+
+  zone5: [
+    { name: "Garde de cristal", hp: 180000, atk: 36000, speed: 6500, xp: 15625, loot: "Éclat de cristal" },
+    { name: "Araignée prismatique", hp: 195000, atk: 39000, speed: 7000, xp: 15625, loot: "Fil prisme" },
+    { name: "Sentinelle de verre", hp: 174000, atk: 33000, speed: 7200, xp: 15625, loot: "Poussière claire" },
+    { name: "BOSS: Avatar de Quartz", hp: 600000, atk: 60000, speed: 12000, xp: 78125, loot: "Noyau cristallin" }
+  ],
+
+  zone6: [
+    { name: "Salamandre ardente", hp: 750000, atk: 140000, speed: 40000, xp: 38880, loot: "Écaille enflammée" },
+    { name: "Élémentaire de feu", hp: 780000, atk: 150000, speed: 45000, xp: 38880, loot: "Noyau de feu" },
+    { name: "Démon mineur", hp: 720000, atk: 140000, speed: 48000, xp: 38880, loot: "Corne brûlée" },
+    { name: "BOSS: Archidémon Infernal", hp: 2500000, atk: 300000, speed: 100000, xp: 194400, loot: "Flamme éternelle" }
+  ],
+
+  zone7: [
+    { name: "Momie errante", hp: 2550000, atk: 480000, speed: 120000, xp: 82345, loot: "Bandelette antique" },
+    { name: "Serpent des sables", hp: 2700000, atk: 510000, speed: 130000, xp: 82345, loot: "Venin sec" },
+    { name: "Chacal cendré", hp: 2460000, atk: 450000, speed: 140000, xp: 82345, loot: "Griffe terne" },
+    { name: "BOSS: Pharaon Déchu", hp: 9000000, atk: 800000, speed: 220000, xp: 411725, loot: "Sceptre ancien" }
+  ],
+
+  zone8: [
+    { name: "Ent déchu", hp: 9500000, atk: 1800000, speed: 250000, xp: 160000, loot: "Écorce sombre" },
+    { name: "Druide corrompu", hp: 9800000, atk: 1900000, speed: 270000, xp: 160000, loot: "Amulette flétrie" },
+    { name: "Ronce animée", hp: 9000000, atk: 1700000, speed: 268000, xp: 160000, loot: "Brindille vivante" },
+    { name: "BOSS: Gardien Sylvestre", hp: 30000000, atk: 2500000, speed: 500000, xp: 800000, loot: "Tronc ancien" }
+  ],
+
+  zone9: [
+    { name: "Marin noyé", hp: 30000000, atk: 6000000, speed: 600000, xp: 295245, loot: "Tissu détrempé" },
+    { name: "Squelette pirate", hp: 31500000, atk: 6300000, speed: 630000, xp: 295245, loot: "Sabre rouillé" },
+    { name: "Ancre vivante", hp: 29400000, atk: 6000000, speed: 650000, xp: 295245, loot: "Maillon spectral" },
+    { name: "BOSS: Capitaine Spectral", hp: 100000000, atk: 9000000, speed: 1000000, xp: 1476225, loot: "Carte maudite" }
+  ],
+
+  zone10: [
+    { name: "Guerrier du passé", hp: 77000000, atk: 15400000, speed: 1200000, xp: 500000, loot: "Casque antique" },
+    { name: "Chevalier hanté", hp: 80500000, atk: 16100000, speed: 1250000, xp: 500000, loot: "Cotte spectral" },
+    { name: "Statue animée", hp: 75600000, atk: 14700000, speed: 1420000, xp: 500000, loot: "Pierre vive" },
+    { name: "BOSS: Seigneur du Temps", hp: 250000000, atk: 30000000, speed: 3300000, xp: 2500000, loot: "Sabliers d'argent" }
+  ],
+
+  zone11: [
+    { name: "Œil abyssal", hp: 120000000, atk: 25000000, speed: 10000000, xp: 805255, loot: "Iris noir" },
+    { name: "Ange déchu", hp: 125000000, atk: 27000000, speed: 11000000, xp: 805255, loot: "Plume de ténèbres" },
+    { name: "Chimère d'ombre", hp: 115000000, atk: 26000000, speed: 11500000, xp: 805255, loot: "Cœur obscur" },
+    { name: "BOSS: Dévoreur du Néant", hp: 400000000, atk: 50000000, speed: 32, xp: 4026275, loot: "Fragment cosmique" }
+  ]
+}
+
+
+function enterCombat() {
+  updateBossProgress();
+  if (hero.hp <= 0) {
+    alert("☠️ Vous êtes mort. Retournez au village pour vous reposer.");
+    return;
+  }
+  const zone = document.getElementById("zoneSelect").value;
+  const pool = enemiesByZone[zone];
+  enemies = [];
+
+  // Choix entre combat normal ou boss après 5 combats
+  if (combatCount < 5) {
+    const count = Math.floor(Math.random() * 2) + 1;
+    for (let i = 0; i < count; i++) {
+      const normalEnemies = pool.filter(e => !e.name.startsWith("BOSS:"));
+      const enemy = { ...normalEnemies[Math.floor(Math.random() * normalEnemies.length)] };
+      enemy.maxHp = enemy.hp;
+      enemies.push(enemy);
+    }
+  } else {
+    const boss = pool.find(e => e.name.startsWith("BOSS:"));
+    if (boss) {
+      const enemy = { ...boss };
+      enemy.maxHp = enemy.hp;
+      enemies.push(enemy);
+    }
+  }
+
+  document.getElementById("village").classList.add("hidden");
+  document.getElementById("combatZone").classList.remove("hidden");
+  document.getElementById("combatLog").innerHTML = "🗒️ Combat engagé...<br>";
+  updateHeroStats();
+  updateInventory();
+  render();
+
+  const enemyDivs = document.querySelectorAll("#enemyGrid div");
+  if (enemyDivs.length > 0) {
+    enemyDivs[0].classList.add("hit-smooth");
+    setTimeout(() => enemyDivs[0].classList.remove("hit-smooth"), 600);
+  }
+
+  combatActive = true;
+  setTimeout(startCombat, 500);
+}
+
+function startCombat() {
+  if (!enemies.length) return;
+  const e = enemies.find(e => e.hp > 0);
+  if (!e) return;
+
+  let proba = hero.speed / (hero.speed + e.speed*10);
+  let maxAttempts = 5; // Nombre max de tentatives d'attaques
+  let hits = 0;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    if (Math.random() < proba) hits++;
+  }
+  hits = Math.max(1, hits); // Toujours au moins 1 coup
+
+  for (let i = 0; i < hits; i++) {
+    if (e.hp <= 0) break;
+    e.hp = Math.max(0, e.hp - hero.atk);
+    logCombat(`🗡️ ${hero.name} frappe ${e.name} (${hero.atk})`);
+  }
+
+  e.hp = Math.max(0, e.hp - hero.atk);
+  logCombat(`🗡️ ${hero.name} attaque ${e.name} (${hero.atk})`);
+  if (e.hp <= 0) {
+    logCombat(`💀 ${e.name} est vaincu`);
+    gainXP(e.xp);
+    gainLoot(e.loot);
+  }
+
+  render();
+
+  if (e.hp > 0) {
+    hero.hp = Math.max(0, hero.hp - e.atk);
+    logCombat(`💥 ${e.name} riposte (${e.atk})`);
+    if (hero.hp <= 0) {
+      hero.hp = 0;
+      logCombat(`☠️ ${hero.name} est vaincu !`);
+      document.getElementById("resetBtn").disabled = false;
+      
+      render();
+      return;
+    }
+  }
+
+  render();
+  if (hero.hp > 0 && enemies.some(e => e.hp > 0)) {
+    
+    if (combatActive) if (combatActive) combatTimeout = setTimeout(startCombat, 1000);
+  } else {
+    if (combatCount < 5) {
+      combatCount++;
+        updateBossProgress();
+      if (autoChain && combatActive) {
+        combatTimeout = setTimeout(enterCombat, 1500);
+      } else {
+        
+        document.getElementById("resetBtn").disabled = false;
+      }
+    } else {
+      // Combat de boss terminé -> retour village
+      logCombat("🏁 Fin de la série de combats. Retour au village...");
+      setTimeout(() => {
+        combatCount = 0;
+        returnToVillage();
+      }, 2000);
+    }
+  }
+}
+const hero = {
+  name: "Aventurier",
+  hp: 30,
+  maxHp: 30,
+  atk: 5,
+  speed: 1,
+  xp: 0,
+  level: 1,
+  loot: {}
+};
+let enemies = [];
+
+
+
+
+
+function updateHeroStats() {
+  const xpNeeded = Math.round(10 * Math.pow(hero.level, 1.5));
+  const xpPercent = Math.min((hero.xp / xpNeeded) * 100, 100);
+  document.getElementById("xpFill").style.width = xpPercent + "%";
+  document.getElementById("heroStats").innerHTML =
+    `Niveau : ${hero.level}<br>XP : ${hero.xp}<br>XP : ${hero.xp} / ${Math.round(10 * Math.pow(hero.level, 1.5))}<br>PV : ${hero.hp}/${hero.maxHp}<br>ATK : ${hero.atk}<br>Vitesse : ${hero.speed}`;
+}
+
+function updateInventory() {
+  const list = document.getElementById("inventoryList");
+  list.innerHTML = "";
+  for (const item in hero.loot) {
+    if (hero.loot[item] > 0) {
+      const li = document.createElement("li");
+      li.textContent = `${item} x${hero.loot[item]}`;
+      list.appendChild(li);
+    }
+  }
+}
+
+function gainLoot(item) {
+saveGame();
+  if (!hero.loot[item]) hero.loot[item] = 0;
+  hero.loot[item]++;
+  updateInventory();
+}
+
+function gainXP(amount) {
+saveGame();
+  hero.xp += amount;
+  const xpNeeded = Math.round(10 * Math.pow(hero.level, 1.5));
+  if (hero.xp >= xpNeeded) {
+    hero.level++;
+    hero.xp = 0;
+    hero.maxHp += 10;
+    hero.atk += 5;
+    hero.speed += 1;
+    // hero.hp conservé (pas régénéré automatiquement)
+    logCombat(`🎉 ${hero.name} monte au niveau ${hero.level}!`);
+
+    const playerDiv = document.querySelector("#playerGrid div");
+    if (playerDiv) {
+      playerDiv.classList.add("levelup-smooth");
+      setTimeout(() => playerDiv.classList.remove("levelup-smooth"), 2000);
+    }
+
+  }
+  updateHeroStats();
+}
+
+function logCombat(message) {
+  document.getElementById("combatLog").innerHTML += message + "<br>";
+}
+
+function render() {
+  document.getElementById("playerGrid").innerHTML = `
+    <div>
+      🧍‍♂️ ${hero.name}<br>XP : ${hero.xp} / ${Math.round(10 * Math.pow(hero.level, 1.5))}<br>PV : ${hero.hp}/${hero.maxHp}
+      <div class="health-container"><div class="health-bar" style="width: ${(hero.hp / hero.maxHp) * 100}%"></div></div>
+    </div>`;
+  
+  const grid = document.getElementById("enemyGrid");
+  grid.innerHTML = "";
+  enemies.forEach(e => {
+    const bar = (e.hp / e.maxHp) * 100;
+    grid.innerHTML += `
+      <div class='appear-smooth'>
+        👾 ${e.name}<br>PV: ${e.hp}/${e.maxHp}
+        <div class="health-container"><div class="health-bar" style="width: ${bar}%"></div></div>
+      </div>`;
+  });
+}
+
+
+
+
+
+
+function openForge() {
+  const forgeDiv = document.getElementById("forge");
+  document.getElementById("village").classList.add("hidden");
+  forgeDiv.classList.remove("hidden");
+  document.getElementById("craftAllBtnFixed").style.display = "block";
+
+  let craftAllBtn = document.createElement("button");
+  craftAllBtn.textContent = "✨ Tout crafter automatiquement";
+  craftAllBtn.id = "craftAllBtnFixed";
+  craftAllBtn.onclick = craftAllPossibleItems;
+
+  forgeDiv.innerHTML = '';
+
+  let header = document.createElement("h2");
+  header.textContent = "🛠️ Forgeron";
+  forgeDiv.appendChild(header);
+
+  let desc = document.createElement("p");
+  desc.textContent = "Objets que vous pouvez fabriquer avec vos ressources :";
+  forgeDiv.appendChild(desc);
+
+  const crafts = [
+    { name: "Os amélioré", material: "Os", amount: 3, stat: "hp", value: 5 },
+    { name: "Cuir amélioré", material: "Cuir", amount: 3, stat: "atk", value: 5 },
+    { name: "Griffe amélioré", material: "Griffe", amount: 3, stat: "speed", value: 5 },
+    { name: "Braises amélioré", material: "Braises", amount: 3, stat: "hp", value: 12 },
+    { name: "Fragments amélioré", material: "Fragments", amount: 3, stat: "atk", value: 12 },
+    { name: "Plume amélioré", material: "Plume", amount: 3, stat: "speed", value: 12 },
+    { name: "Éctoplasme amélioré", material: "Éctoplasme", amount: 3, stat: "hp", value: 29 },
+    { name: "Tome noir amélioré", material: "Tome noir", amount: 3, stat: "atk", value: 29 },
+    { name: "Bouillasse amélioré", material: "Bouillasse", amount: 3, stat: "speed", value: 29 },
+    { name: "Essence d'ombre amélioré", material: "Essence d'ombre", amount: 3, stat: "hp", value: 69 },
+    { name: "Énergie spectrale amélioré", material: "Énergie spectrale", amount: 3, stat: "atk", value: 69 },
+    { name: "Oeil maudit amélioré", material: "Oeil maudit", amount: 3, stat: "speed", value: 69 },
+    { name: "Éclat de cristal amélioré", material: "Éclat de cristal", amount: 3, stat: "hp", value: 166 },
+    { name: "Fil prisme amélioré", material: "Fil prisme", amount: 3, stat: "atk", value: 166 },
+    { name: "Poussière claire amélioré", material: "Poussière claire", amount: 3, stat: "speed", value: 166 },
+    { name: "Écaille enflammée amélioré", material: "Écaille enflammée", amount: 3, stat: "hp", value: 398 },
+    { name: "Noyau de feu amélioré", material: "Noyau de feu", amount: 3, stat: "atk", value: 398 },
+    { name: "Corne brûlée amélioré", material: "Corne brûlée", amount: 3, stat: "speed", value: 398 },
+    { name: "Bandelette antique amélioré", material: "Bandelette antique", amount: 3, stat: "hp", value: 956 },
+    { name: "Venin sec amélioré", material: "Venin sec", amount: 3, stat: "atk", value: 956 },
+    { name: "Griffe terne amélioré", material: "Griffe terne", amount: 3, stat: "speed", value: 956 },
+    { name: "Écorce sombre amélioré", material: "Écorce sombre", amount: 3, stat: "hp", value: 2293 },
+    { name: "Amulette flétrie amélioré", material: "Amulette flétrie", amount: 3, stat: "atk", value: 2293 },
+    { name: "Brindille vivante amélioré", material: "Brindille vivante", amount: 3, stat: "speed", value: 2293 },
+    { name: "Tissu détrempé amélioré", material: "Tissu détrempé", amount: 3, stat: "hp", value: 5504 },
+    { name: "Sabre rouillé amélioré", material: "Sabre rouillé", amount: 3, stat: "atk", value: 5504 },
+    { name: "Maillon spectral amélioré", material: "Maillon spectral", amount: 3, stat: "speed", value: 5504 },
+    { name: "Casque antique amélioré", material: "Casque antique", amount: 3, stat: "hp", value: 13209 },
+    { name: "Cotte spectral amélioré", material: "Cotte spectral", amount: 3, stat: "atk", value: 13209 },
+    { name: "Pierre vive amélioré", material: "Pierre vive", amount: 3, stat: "speed", value: 13209 },
+    { name: "Iris noir amélioré", material: "Iris noir", amount: 3, stat: "hp", value: 31702 },
+    { name: "Plume de ténèbres amélioré", material: "Plume de ténèbres", amount: 3, stat: "atk", value: 31702 },
+    { name: "Cœur obscur amélioré", material: "Cœur obscur", amount: 3, stat: "speed", value: 31702 },
+  ];
+
+  let anyShown = false;
+
+  crafts.forEach(craft => {
+    const qty = hero.loot?.[craft.material] || 0;
+    if (qty >= craft.amount) {
+      anyShown = true;
+      let btn = document.createElement("button");
+      btn.textContent = `Créer ${craft.name} (+${craft.value} ${craft.stat.toUpperCase()})`;
+      btn.onclick = () => craftItem(craft.name, craft.material, craft.amount, craft.stat, craft.value);
+      forgeDiv.appendChild(btn);
+      forgeDiv.appendChild(document.createElement("br"));
+    }
+  });
+
+  
+
+  if (!anyShown) {
+    let msg = document.createElement("p");
+    msg.textContent = "❌ Aucun objet à fabriquer avec vos ressources actuelles.";
+    forgeDiv.appendChild(msg);
+  }
+
+  
+  const specialCrafts = [
+  { name: "Cape sauvage", material: "Essence sauvage", statBoosts: { hp: 10, atk: 5, speed: 2 } },
+  { name: "Épée ardente", material: "Cœur flamboyant", statBoosts: { hp: 20, atk: 10, speed: 3 } },
+  { name: "Bague des marais", material: "Lymphe impure", statBoosts: { hp: 30, atk: 15, speed: 4 } },
+  { name: "Manteau des ombres", material: "Cape vivante", statBoosts: { hp: 40, atk: 20, speed: 5 } },
+  { name: "Cotte de quartz", material: "Noyau cristallin", statBoosts: { hp: 50, atk: 25, speed: 6 } },
+  { name: "Orbe infernal", material: "Flamme éternelle", statBoosts: { hp: 60, atk: 30, speed: 7 } },
+  { name: "Sceptre du désert", material: "Sceptre ancien", statBoosts: { hp: 70, atk: 35, speed: 8 } },
+  { name: "Armure de Sylve", material: "Tronc ancien", statBoosts: { hp: 80, atk: 40, speed: 9 } },
+  { name: "Boussole spectrale", material: "Carte maudite", statBoosts: { hp: 90, atk: 45, speed: 10 } },
+  { name: "Anneau temporel", material: "Sabliers d'argent", statBoosts: { hp: 100, atk: 50, speed: 11 } },
+  { name: "Éclat du Néant", material: "Fragment cosmique", statBoosts: { hp: 120, atk: 60, speed: 12 } }
+];
+
+specialCrafts.forEach(craft => {
+  if ((hero.loot?.[craft.material] || 0) >= 1) {
+    let btn = document.createElement("button");
+    btn.textContent = `Créer ${craft.name} (+${craft.statBoosts.hp} PV, +${craft.statBoosts.atk} ATK, +${craft.statBoosts.speed} Vitesse)`;
+    btn.onclick = () => {
+      if (hero.loot[craft.material] <= 0) {
+        alert("Pas assez de " + craft.material + " !");
+        return;
+      }
+      hero.loot[craft.material] -= 1;
+      hero.maxHp += craft.statBoosts.hp;
+      hero.atk += craft.statBoosts.atk;
+      hero.speed += craft.statBoosts.speed;
+      if (hero.hp > hero.maxHp) hero.hp = hero.maxHp;
+      updateInventory();
+      updateHeroStats();
+      alert(`${craft.name} fabriqué !`);
+    };
+    forgeDiv.appendChild(btn);
+    forgeDiv.appendChild(document.createElement("br"));
+  }
+});
+
+
+
+    
+let closeBtn = document.createElement("button");
+  closeBtn.textContent = "❌ Fermer";
+  closeBtn.onclick = closeForge;
+  forgeDiv.appendChild(closeBtn);
+}
+
+function returnToVillage() {
+  clearTimeout(combatTimeout);
+  autoChain = false;
+  combatActive = false;
+  autoChain = false;
+  combatActive = false;
+  combatActive = false;
+  combatCount = 0;
+  autoChain = true;
+  updateBossProgress();
+  combatCount = 0;
+  hero.hp = hero.maxHp;
+  // hero.hp = hero.maxHp (désactivé pour ne pas écraser les augmentations de maxHp);
+  updateHeroStats();
+  render();
+  document.getElementById("village").classList.remove("hidden");
+  document.getElementById("combatZone").classList.add("hidden");
+}
+updateHeroStats();
+updateInventory();
+function craftItem(name, material, amount, stat, value) {
+saveGame();
+  if (!hero.loot[material] || hero.loot[material] < amount) {
+    alert("Pas assez de " + material + " pour fabriquer " + name);
+    return;
+  }
+  hero.loot[material] -= amount;
+
+  if (stat === "hp") {
+    if (!hero.maxHp) hero.maxHp = hero.hp;
+    hero.maxHp += value;
+    if (hero.hp > hero.maxHp) hero.hp = hero.maxHp;
+    console.log("CRAFT DEBUG: maxHp après craft =", hero.maxHp);
+  } else {
+    hero[stat] += value;
+  }
+
+  updateInventory();
+  updateHeroStats();
+  alert(name + " fabriqué ! Bonus : +" + value + " " + stat.toUpperCase());
+}
+
+function closeForge() {
+saveGame();
+  hero.hp = hero.maxHp;
+  console.log("DEBUG: PV régénérés à", hero.hp, "/", hero.maxHp);
+  document.getElementById("village").classList.remove("hidden");
+  document.getElementById("forge").classList.add("hidden");
+  document.getElementById("craftAllBtnFixed").style.display = "none";
+  updateHeroStats();
+}
+
+
+
+function craftAllPossibleItems() {
+saveGame();
+  const crafts = [
+    { name: "Os amélioré", material: "Os", amount: 3, stat: "hp", value: 5 },
+    { name: "Cuir amélioré", material: "Cuir", amount: 3, stat: "atk", value: 5 },
+    { name: "Griffe amélioré", material: "Griffe", amount: 3, stat: "speed", value: 5 },
+    { name: "Braises amélioré", material: "Braises", amount: 3, stat: "hp", value: 12 },
+    { name: "Fragments amélioré", material: "Fragments", amount: 3, stat: "atk", value: 12 },
+    { name: "Plume amélioré", material: "Plume", amount: 3, stat: "speed", value: 12 },
+    { name: "Éctoplasme amélioré", material: "Éctoplasme", amount: 3, stat: "hp", value: 29 },
+    { name: "Tome noir amélioré", material: "Tome noir", amount: 3, stat: "atk", value: 29 },
+    { name: "Bouillasse amélioré", material: "Bouillasse", amount: 3, stat: "speed", value: 29 },
+    { name: "Essence d'ombre amélioré", material: "Essence d'ombre", amount: 3, stat: "hp", value: 69 },
+    { name: "Énergie spectrale amélioré", material: "Énergie spectrale", amount: 3, stat: "atk", value: 69 },
+    { name: "Oeil maudit amélioré", material: "Oeil maudit", amount: 3, stat: "speed", value: 69 },
+    { name: "Éclat de cristal amélioré", material: "Éclat de cristal", amount: 3, stat: "hp", value: 166 },
+    { name: "Fil prisme amélioré", material: "Fil prisme", amount: 3, stat: "atk", value: 166 },
+    { name: "Poussière claire amélioré", material: "Poussière claire", amount: 3, stat: "speed", value: 166 },
+    { name: "Écaille enflammée amélioré", material: "Écaille enflammée", amount: 3, stat: "hp", value: 398 },
+    { name: "Noyau de feu amélioré", material: "Noyau de feu", amount: 3, stat: "atk", value: 398 },
+    { name: "Corne brûlée amélioré", material: "Corne brûlée", amount: 3, stat: "speed", value: 398 },
+    { name: "Bandelette antique amélioré", material: "Bandelette antique", amount: 3, stat: "hp", value: 956 },
+    { name: "Venin sec amélioré", material: "Venin sec", amount: 3, stat: "atk", value: 956 },
+    { name: "Griffe terne amélioré", material: "Griffe terne", amount: 3, stat: "speed", value: 956 },
+    { name: "Écorce sombre amélioré", material: "Écorce sombre", amount: 3, stat: "hp", value: 2293 },
+    { name: "Amulette flétrie amélioré", material: "Amulette flétrie", amount: 3, stat: "atk", value: 2293 },
+    { name: "Brindille vivante amélioré", material: "Brindille vivante", amount: 3, stat: "speed", value: 2293 },
+    { name: "Tissu détrempé amélioré", material: "Tissu détrempé", amount: 3, stat: "hp", value: 5504 },
+    { name: "Sabre rouillé amélioré", material: "Sabre rouillé", amount: 3, stat: "atk", value: 5504 },
+    { name: "Maillon spectral amélioré", material: "Maillon spectral", amount: 3, stat: "speed", value: 5504 },
+    { name: "Casque antique amélioré", material: "Casque antique", amount: 3, stat: "hp", value: 13209 },
+    { name: "Cotte spectral amélioré", material: "Cotte spectral", amount: 3, stat: "atk", value: 13209 },
+    { name: "Pierre vive amélioré", material: "Pierre vive", amount: 3, stat: "speed", value: 13209 },
+    { name: "Iris noir amélioré", material: "Iris noir", amount: 3, stat: "hp", value: 31702 },
+    { name: "Plume de ténèbres amélioré", material: "Plume de ténèbres", amount: 3, stat: "atk", value: 31702 },
+    { name: "Cœur obscur amélioré", material: "Cœur obscur", amount: 3, stat: "speed", value: 31702 }
+  ];
+
+  const bossItems = [
+  { name: "Cape sauvage", material: "Essence sauvage", statBoosts: { hp: 10, atk: 5, speed: 2 } },
+  { name: "Épée ardente", material: "Cœur flamboyant", statBoosts: { hp: 20, atk: 10, speed: 3 } },
+  { name: "Bague des marais", material: "Lymphe impure", statBoosts: { hp: 30, atk: 15, speed: 4 } },
+  { name: "Manteau des ombres", material: "Cape vivante", statBoosts: { hp: 40, atk: 20, speed: 5 } },
+  { name: "Cotte de quartz", material: "Noyau cristallin", statBoosts: { hp: 50, atk: 25, speed: 6 } },
+  { name: "Orbe infernal", material: "Flamme éternelle", statBoosts: { hp: 60, atk: 30, speed: 7 } },
+  { name: "Sceptre du désert", material: "Sceptre ancien", statBoosts: { hp: 70, atk: 35, speed: 8 } },
+  { name: "Armure de Sylve", material: "Tronc ancien", statBoosts: { hp: 80, atk: 40, speed: 9 } },
+  { name: "Boussole spectrale", material: "Carte maudite", statBoosts: { hp: 90, atk: 45, speed: 10 } },
+  { name: "Anneau temporel", material: "Sabliers d'argent", statBoosts: { hp: 100, atk: 50, speed: 11 } },
+  { name: "Éclat du Néant", material: "Fragment cosmique", statBoosts: { hp: 120, atk: 60, speed: 12 } }
+];
+
+
+
+  let summary = [];
+  crafts.forEach(craft => {
+    let qty = Math.floor((hero.loot[craft.material] || 0) / craft.amount);
+    for (let i = 0; i < qty; i++) {
+      hero.loot[craft.material] -= craft.amount;
+      if (craft.stat === "hp") {
+        hero.maxHp += craft.value;
+        if (hero.hp > hero.maxHp) hero.hp = hero.maxHp;
+      } else {
+        hero[craft.stat] += craft.value;
+      }
+      summary.push(`✅ ${craft.name} (+${craft.value} ${craft.stat.toUpperCase()})`);
+    }
+  });
+
+  bossItems.forEach(craft => {
+  const qty = hero.loot?.[craft.material] || 0;
+  for (let i = 0; i < qty; i++) {
+    hero.loot[craft.material] -= 1;
+    hero.maxHp += craft.statBoosts.hp;
+    hero.atk += craft.statBoosts.atk;
+    hero.speed += craft.statBoosts.speed;
+    if (hero.hp > hero.maxHp) hero.hp = hero.maxHp;
+    summary.push(`✅ ${craft.name} (+${craft.statBoosts.hp} PV, +${craft.statBoosts.atk} ATK, +${craft.statBoosts.speed} VIT)`);
+  }
+});
+
+  updateInventory();
+  updateHeroStats();
+
+  if (summary.length > 0) {
+    alert("Résumé du craft :\n" + summary.join("\n"));
+  } else {
+    alert("❌ Aucune fabrication possible avec vos ressources.");
+  }
+}
+
+// ===== SAUVEGARDE AUTOMATIQUE =====
+
+// Fonction pour sauvegarder la partie
+function saveGame() {
+  const saveData = {
+    hero: hero,
+    inventory: hero.loot
+  };
+  localStorage.setItem('rpgSave', JSON.stringify(saveData));
+}
+
+// Fonction pour charger la partie
+function loadGame() {
+  const save = localStorage.getItem('rpgSave');
+  if (save) {
+    const data = JSON.parse(save);
+    Object.assign(hero, data.hero);
+    hero.loot = data.inventory || {};
+  }
+}
+
+// Charger automatiquement la sauvegarde au lancement
+loadGame();
+updateHeroStats();
+updateInventory();
+render();
+
+
+</script>
+<button id="craftAllBtnFixed" onclick="craftAllPossibleItems()">✨ Tout crafter automatiquement</button></body>
+</html>
